@@ -32,9 +32,18 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define	MAX_BUFFER_SIZE		30
-#define RST	1
-#define OK	2
+#define	MAX_BUFFER_SIZE	30
+#define INIT		0
+#define RST_BEGIN	1 // !
+#define RST_R		2 // R
+#define RST_S		3 // S
+#define RST_T		4 // T
+#define RST_END		5 // #
+#define OK_BEGIN	6 // !
+#define OK_O		7 // O
+#define OK_K		8 // K
+#define MESSAGE_SEND 1
+#define MESSAGE_WAIT 2
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -74,7 +83,8 @@ uint8_t index_buffer = 0;
 uint8_t RSTstr[] = "!RST#";
 uint8_t OKstr[] = "!OK#";
 char str[50];
-int mode = 0;
+int parser_mode = 0;
+int message_mode = 0;
 int timer_flag = 0;
 int timer_counter = 300;
 uint32_t ADC_Value = 1;
@@ -338,15 +348,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	if (huart->Instance == USART2) {
 //		HAL_UART_Transmit(&huart2, &temp, 1, 50);
-		if(temp == (uint8_t)('!'))
-		{
-			for (int i = 0; i < MAX_BUFFER_SIZE; i++)
-			{
-				buffer[i] = 0;
-			}
-			index_buffer = 0;
-//			HAL_UART_Transmit(&huart2, (void*)str, sprintf(str, "RECEIVE !\r\n"), 100);
-		}
 		buffer[index_buffer++] = temp;
 		if(index_buffer == MAX_BUFFER_SIZE) index_buffer = 0;
 		buffer_flag = 1;
@@ -361,37 +362,84 @@ void main_fsm(void){
 	uart_communication_fsm();
 }
 void command_parser_fsm(void){
-	int i;
-	for (i = 0; i < sizeof(RSTstr); i++)
-	{
-		if (buffer[i] != RSTstr[i])	break;
-		if (buffer[i] == '#')
-		{
-			mode = RST;
-//			HAL_UART_Transmit(&huart2, (void*)str, sprintf(str, "in rst str \r\n"), 100);
-			break;
+	int index;
+	if (index_buffer == 0) index = MAX_BUFFER_SIZE;
+	else index = index_buffer - 1;
+
+	switch(parser_mode){
+	case INIT:
+		if (buffer[index] == '!') parser_mode = RST_BEGIN;
+		break;
+
+	case RST_BEGIN:
+		if (buffer[index] == 'R') parser_mode = RST_R;
+		else parser_mode = INIT;
+		break;
+
+	case RST_R:
+		if (buffer[index] == 'S') parser_mode = RST_S;
+		else parser_mode = INIT;
+		break;
+
+	case RST_S:
+		if (buffer[index] == 'T') parser_mode = RST_T;
+		else parser_mode = INIT;
+		break;
+
+	case RST_T:
+		if (buffer[index] == '#'){
+			 parser_mode = RST_END;
+			 message_mode = MESSAGE_SEND;
 		}
-	}
-	for (i = 0; i < sizeof(OKstr); i++)
-	{
-		if (buffer[i] != OKstr[i]) break;
-		if (buffer[i] == '#')
-			{
-				mode = OK;
-				break;
-			}
+		else parser_mode = INIT;
+		break;
+
+	case RST_END:
+		if (buffer[index] == '!') parser_mode = OK_BEGIN;
+		break;
+
+	case OK_BEGIN:
+		if (buffer[index] == 'O') parser_mode = OK_O;
+		else parser_mode = RST_END;
+		break;
+
+	case OK_O:
+		if(buffer[index] == 'K') parser_mode = OK_K;
+		else parser_mode = RST_END;
+		break;
+
+	case OK_K:
+		if (buffer[index] == '#'){
+			parser_mode = INIT;
+			message_mode = INIT;
+		}
+		else parser_mode = RST_END;
+		break;
+
+	default:
+			break;
 	}
 
 }
 
 void uart_communication_fsm(void)
 {
-	if (timer_flag == 1 && mode == RST)
-	{
-		ADC_Value = HAL_ADC_GetValue(&hadc1	);
+	switch(message_mode){
+	case INIT:
+		break;
+	case MESSAGE_SEND:
+		ADC_Value = HAL_ADC_GetValue(&hadc1);
 		HAL_UART_Transmit(&huart2, (void*)str, sprintf(str, "!ADC=%d#\r\n",ADC_Value), 1000);
 		timer_flag = 0;
-		timer_counter = 300;
+		timer_counter = 100;
+		message_mode = MESSAGE_WAIT;
+		break;
+
+	case MESSAGE_WAIT:
+		if (timer_flag == 1){
+			message_mode = MESSAGE_SEND;
+		}
+		break;
 	}
 }
 /* USER CODE END 4 */
