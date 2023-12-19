@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include "software_timer.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -80,14 +81,10 @@ uint8_t temp = 0;
 uint8_t buffer_flag = 0;
 uint8_t	buffer[MAX_BUFFER_SIZE];
 uint8_t index_buffer = 0;
-uint8_t RSTstr[] = "!RST#";
-uint8_t OKstr[] = "!OK#";
 char str[50];
 int parser_mode = 0;
 int message_mode = 0;
-int timer_flag = 0;
-int timer_counter = 300;
-uint32_t ADC_Value = 1;
+uint32_t ADC_Value = 0;
 /* USER CODE END 0 */
 
 /**
@@ -336,18 +333,10 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-	if (timer_counter > 0)
-	{
-		timer_counter--;
-		if (timer_counter <= 0)
-		{
-			timer_flag = 1;
-		}
-	}
+	timerRun();
 }
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	if (huart->Instance == USART2) {
-//		HAL_UART_Transmit(&huart2, &temp, 1, 50);
 		buffer[index_buffer++] = temp;
 		if(index_buffer == MAX_BUFFER_SIZE) index_buffer = 0;
 		buffer_flag = 1;
@@ -430,8 +419,7 @@ void uart_communication_fsm(void)
 	case MESSAGE_SEND:
 		ADC_Value = HAL_ADC_GetValue(&hadc1);
 		HAL_UART_Transmit(&huart2, (void*)str, sprintf(str, "!ADC=%d#\r\n",ADC_Value), 1000);
-		timer_flag = 0;
-		timer_counter = 100;
+		setTimer(3000);
 		message_mode = MESSAGE_WAIT;
 		break;
 
@@ -461,7 +449,6 @@ void Error_Handler(void)
 
 #ifdef  USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
   *         where the assert_param error has occurred.
   * @param  file: pointer to the source file name
   * @param  line: assert_param error line source number
